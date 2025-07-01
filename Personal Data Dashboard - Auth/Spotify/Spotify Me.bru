@@ -1,0 +1,15 @@
+meta {
+  name: Spotify Me
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{URL}}/api/spotify/me
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzYWxsbHlAZW1haWwuY29tIiwiZnVsbE5hbWUiOiJTYWxseXZhbm4gQW5nZSIsInVzZXJJZCI6IjAxZmJiMTk2LTQwYjMtNDYyMi04YzU1LWU2OTRlNTMxODI0ZCIsImlhdCI6MTc1MTIwNTI0MiwiZXhwIjoxNzUxMjA1NTQyfQ.oroSFjzgTgsa3mkqiMSfWkWRMCU3cqh5JCamDj_80SA
+}

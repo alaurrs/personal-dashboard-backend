@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Personal Data Dashboard - Auth",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

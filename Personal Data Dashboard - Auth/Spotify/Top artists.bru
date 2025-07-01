@@ -1,0 +1,15 @@
+meta {
+  name: Top artists
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{URL}}/api/spotify/top-artists
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzYWxsbHlAZW1haWwuY29tIiwiZnVsbE5hbWUiOiJTYWxseXZhbm4gQW5nZSIsInVzZXJJZCI6IjAxZmJiMTk2LTQwYjMtNDYyMi04YzU1LWU2OTRlNTMxODI0ZCIsImlhdCI6MTc1MTIwOTQyNSwiZXhwIjoxNzUxMjA5NzI1fQ.aLUOhqG-tp0mK96oJsmZ6LdvzO7oege918ejM9KZmEs
+}
