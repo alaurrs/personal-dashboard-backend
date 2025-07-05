@@ -62,7 +62,7 @@ public class SpotifyAuthController {
                 .queryParam("client_id", spotifyProperties.getClientId())
                 .queryParam("response_type", "code")
                 .queryParam("redirect_uri", spotifyProperties.getRedirectUri())
-                .queryParam("scope", "user-top-read user-read-email user-read-private")
+                .queryParam("scope", "user-read-recently-played user-top-read user-read-email user-read-private")
                 .queryParam("state", state)
                 .build().toUriString();
 
