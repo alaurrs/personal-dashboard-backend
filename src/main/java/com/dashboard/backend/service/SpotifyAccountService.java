@@ -3,10 +3,20 @@ package com.dashboard.backend.service;
 import com.dashboard.backend.User.model.SpotifyAccount;
 import com.dashboard.backend.User.model.User;
 import com.dashboard.backend.User.repository.SpotifyAccountRepository;
+import com.dashboard.backend.thirdparty.spotify.SpotifyProperties;
+import com.dashboard.backend.thirdparty.spotify.SpotifyTokenResponseDto;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestTemplate;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -14,11 +24,14 @@ import java.util.Optional;
 
 @Service
 @Transactional
+@RequiredArgsConstructor
 @Slf4j
 public class SpotifyAccountService {
 
-    @Autowired
-    private SpotifyAccountRepository spotifyAccountRepository;
+    private final SpotifyAccountRepository spotifyAccountRepository;
+    private final SpotifyProperties spotifyProperties;
+    private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
 
     /**
      * Vérifie si un utilisateur a un compte Spotify lié
@@ -46,11 +59,7 @@ public class SpotifyAccountService {
         Optional<SpotifyAccount> existingAccount = spotifyAccountRepository.findByUser(user);
 
         SpotifyAccount account;
-        if (existingAccount.isPresent()) {
-            account = existingAccount.get();
-        } else {
-            account = new SpotifyAccount(user, spotifyUserId, spotifyEmail);
-        }
+        account = existingAccount.orElseGet(() -> new SpotifyAccount(user, spotifyUserId, spotifyEmail));
 
         account.setDisplayName(displayName);
         account.setAccessToken(accessToken);
@@ -109,11 +118,53 @@ public class SpotifyAccountService {
         log.debug("Token Spotify marqué pour révocation (nettoyage local uniquement)");
     }
 
+    public Optional<String> refreshAccessToken(SpotifyAccount account) {
+        log.info("Tentative de rafraîchissement du token pour le compte Spotify ID: {}", account.getId());
 
-    /**
-     * Vérifie si le token est expiré et doit être rafraîchi
-     */
-    public boolean needsTokenRefresh(SpotifyAccount account) {
-        return account.isTokenExpired();
+        if (account.getRefreshToken() == null || account.getRefreshToken().isEmpty()) {
+            log.error("Aucun refresh token disponible pour le compte Spotify ID: {}. Impossible de rafraîchir.", account.getId());
+            return Optional.empty();
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.setBasicAuth(spotifyProperties.getClientId(), spotifyProperties.getClientSecret());
+
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("grant_type", "refresh_token");
+        form.add("refresh_token", account.getRefreshToken());
+
+        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(form, headers);
+
+        try {
+            ResponseEntity<String> response = restTemplate.postForEntity(
+                    "https://accounts.spotify.com/api/token",
+                    request,
+                    String.class
+            );
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                SpotifyTokenResponseDto tokenResponse = objectMapper.readValue(response.getBody(), SpotifyTokenResponseDto.class);
+
+                // Mettre à jour les tokens dans la base de données
+                updateTokens(
+                        account,
+                        tokenResponse.accessToken(),
+                        // Spotify peut parfois retourner un nouveau refresh_token
+                        tokenResponse.refreshToken() != null ? tokenResponse.refreshToken() : account.getRefreshToken(),
+                        Instant.now().plusSeconds(tokenResponse.expiresIn())
+                );
+
+                log.info("Token Spotify rafraîchi avec succès pour le compte ID: {}", account.getId());
+                return Optional.of(tokenResponse.accessToken());
+            } else {
+                log.error("Échec du rafraîchissement du token Spotify. Statut: {}", response.getStatusCode());
+                return Optional.empty();
+            }
+        } catch (Exception e) {
+            log.error("Erreur critique lors du rafraîchissement du token Spotify pour le compte ID: {}. L'utilisateur devra peut-être se reconnecter.", account.getId(), e);
+            // Ici, on pourrait marquer le compte comme invalide si l'erreur persiste (ex: token révoqué)
+            return Optional.empty();
+        }
     }
 }

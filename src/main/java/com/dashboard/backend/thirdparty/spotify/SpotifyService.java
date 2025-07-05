@@ -37,6 +37,7 @@ public class SpotifyService {
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
     private final SpotifyClient spotifyClient;
+    private final SpotifyDataService spotifyDataService;
     private final SpotifyAccountService spotifyAccountService;
     private final JwtService jwtService;
 
@@ -98,14 +99,10 @@ public class SpotifyService {
         return spotifyClient.getAccessToken(user);
     }
 
-    public Optional<SpotifyProfileDto> getCurrentUserProfile(User user) {
-        return spotifyClient.getCurrentProfile(user);
-    }
-
     public Optional<SpotifyProfileDto> getCurrentUserProfileFromRequest(HttpServletRequest request) {
         String email = extractAndValidateUserFromRequest(request);
         User user = getUserByEmail(email);
-        return getCurrentUserProfile(user);
+        return spotifyDataService.getCurrentProfile(user);
     }
 
     public boolean hasSpotifyLinked(User user) {
@@ -168,69 +165,24 @@ public class SpotifyService {
     }
 
     private User getUserByEmail(String email) {
-        User user = userRepository.findByEmail(email).orElseThrow(
+        return userRepository.findByEmail(email).orElseThrow(
                 () -> new UserNotFoundException("Utilisateur non trouvé pour l'email: " + email)
         );
-        return user;
-    }
-
-    public Optional<SpotifyTopArtistsDto> getTopArtists(User user, String timeRange, int limit) {
-        log.debug("Récupération des top artistes pour l'utilisateur: {} (période: {})", user.getEmail(), timeRange);
-
-        // Vérifier si l'utilisateur a un compte Spotify lié
-        if (!spotifyAccountService.hasSpotifyLinked(user)) {
-            log.info("Aucun compte Spotify lié pour l'utilisateur: {}", user.getEmail());
-            return Optional.empty();
-        }
-
-        // Valider le timeRange
-        if (!isValidTimeRange(timeRange)) {
-            throw new IllegalArgumentException("Période invalide: " + timeRange + ". Valeurs autorisées: short_term, medium_term, long_term");
-        }
-
-        // Valider la limite
-        if (limit < 1 || limit > 50) {
-            throw new IllegalArgumentException("Limite invalide: " + limit + ". Doit être entre 1 et 50");
-        }
-
-        return spotifyClient.getTopArtists(user, timeRange, limit);
     }
     public Optional<SpotifyTopArtistsDto> getTopArtistsFromRequest(HttpServletRequest request, String timeRange, int limit) {
         String email = extractAndValidateUserFromRequest(request);
         User user = getUserByEmail(email);
-
-        // MÊME validation que pour les tracks
         validateTimeRangeParameter(timeRange);
         validateLimitParameter(limit);
-
-        return getTopArtists(user, timeRange, limit);
+        return spotifyDataService.getTopArtists(user, timeRange, limit);
     }
-
-    public Optional<SpotifyTopTracksDto> getTopTracks(User user, String timeRange, int limit) {
-        log.debug("Récupération des top tracks pour l'utilisateur: {} (période: {})", user.getEmail(), timeRange);
-
-        // Vérifier si l'utilisateur a un compte Spotify lié
-        if (!spotifyAccountService.hasSpotifyLinked(user)) {
-            log.info("Aucun compte Spotify lié pour l'utilisateur: {}", user.getEmail());
-            return Optional.empty();
-        }
-
-        return spotifyClient.getTopTracks(user, timeRange, limit);
-    }
-
-
 
     public Optional<SpotifyTopTracksDto> getTopTracksFromRequest(HttpServletRequest request, String timeRange, int limit) {
-        // 1. Validation et extraction utilisateur
         String email = extractAndValidateUserFromRequest(request);
         User user = getUserByEmail(email);
-
-        // 2. Validation des paramètres métier
         validateTimeRangeParameter(timeRange);
         validateLimitParameter(limit);
-
-        // 3. Délégation à la logique métier
-        return getTopTracks(user, timeRange, limit);
+        return spotifyDataService.getTopTracks(user, timeRange, limit);
     }
 
     private void validateTimeRangeParameter(String timeRange) {
@@ -252,14 +204,6 @@ public class SpotifyService {
                             ". Doit être entre 1 et 50"
             );
         }
-    }
-
-
-    /**
-     * Valide le paramètre timeRange
-     */
-    private boolean isValidTimeRange(String timeRange) {
-        return List.of("short_term", "medium_term", "long_term").contains(timeRange);
     }
 
     /**

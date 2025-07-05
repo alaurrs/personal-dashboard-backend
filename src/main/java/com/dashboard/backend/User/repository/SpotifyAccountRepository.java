@@ -5,6 +5,8 @@ import com.dashboard.backend.User.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -20,4 +22,6 @@ public interface SpotifyAccountRepository extends JpaRepository<SpotifyAccount, 
     boolean existsByUser(User user);
 
     void deleteByUser(User user);
+    List<SpotifyAccount> findByTokenExpiryBefore(Instant expiryThreshold);
+
 }
