@@ -58,7 +58,7 @@ public class SpotifyClient {
 
         if (isTokenExpired(spotifyAccount)) {
             log.info("Token expiré pour l'utilisateur: {}, rafraîchissement en cours", user.getEmail());
-            return refreshToken(spotifyAccount);
+            return spotifyAccountService.refreshAccessToken(spotifyAccount);
         }
 
         return Optional.of(spotifyAccount.getAccessToken());
