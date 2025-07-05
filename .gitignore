@@ -34,3 +34,5 @@ build/
 .vscode/
 
 .DS_Store
+
+/Personal Data Dashboard - Auth

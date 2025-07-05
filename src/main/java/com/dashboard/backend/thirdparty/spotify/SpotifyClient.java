@@ -5,6 +5,7 @@ import com.dashboard.backend.User.model.User;
 import com.dashboard.backend.User.repository.UserRepository;
 import com.dashboard.backend.service.SpotifyAccountService;
 import com.dashboard.backend.thirdparty.spotify.dto.SpotifyProfileDto;
+import com.dashboard.backend.thirdparty.spotify.dto.SpotifyRecentlyPlayedDto;
 import com.dashboard.backend.thirdparty.spotify.dto.SpotifyTopArtistsDto;
 import com.dashboard.backend.thirdparty.spotify.dto.SpotifyTopTracksDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,6 +36,7 @@ public class SpotifyClient {
     private static final String SPOTIFY_TOP_ARTISTS_URL = "https://api.spotify.com/v1/me/top/artists";
 
     private static final String SPOTIFY_TOP_TRACKS_URL = "https://api.spotify.com/v1/me/top/tracks";
+    private static final String SPOTIFY_RECENTLY_PLAYED_URL = "https://api.spotify.com/v1/me/player/recently-played";
 
     private static final int TOKEN_REFRESH_BUFFER_SECONDS = 60;
 
@@ -290,5 +292,25 @@ public class SpotifyClient {
     public void revokeSpotifyAccess(User user) {
         log.info("Révocation de l'accès Spotify pour l'utilisateur: {}", user.getEmail());
         spotifyAccountService.unlinkSpotifyAccount(user);
+    }
+
+    public Optional<SpotifyRecentlyPlayedDto> getRecentlyPlayed(User user) {
+        log.debug("Récupération de l'historique d'écoute pour l'utilisateur: {}", user.getEmail());
+
+        // 1. Récupère un token valide (gère le refresh automatiquement)
+        Optional<String> tokenOpt = getAccessToken(user);
+        if (tokenOpt.isEmpty()) {
+            log.warn("Impossible de récupérer un token valide pour la synchronisation de l'historique de {}.", user.getEmail());
+            return Optional.empty();
+        }
+
+        // 2. Construire l'URL de l'API
+        // L'API ne retourne que les 50 derniers morceaux. La pagination plus avancée se fait avec les curseurs `after` ou `before`.
+        // Pour une première implémentation, récupérer les 50 derniers est parfait.
+        String url = SPOTIFY_RECENTLY_PLAYED_URL + "?limit=50";
+
+        // 3. Faire l'appel API en utilisant la méthode générique
+        // C'est ici que tu bénéficies de ta bonne architecture !
+        return makeSpotifyApiCall(url, tokenOpt.get(), SpotifyRecentlyPlayedDto.class);
     }
 }

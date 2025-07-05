@@ -8,6 +8,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -16,10 +17,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.List;
 
 @Component
 @AllArgsConstructor
+@Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
@@ -43,36 +44,34 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             userEmail = jwtService.extractEmail(jwt);
         } catch (ExpiredJwtException e) {
-            System.out.println("❌ Token expiré");
+            log.warn("❌ Token JWT expiré : {}", e.getMessage());
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Token expiré");
             return;
         } catch (Exception e) {
-            System.out.println("❌ Token invalide");
+            log.error("❌ Erreur lors de la validation du token JWT", e);
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Token invalide");
             return;
         }
 
         if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            var userOptional = userRepository.findByEmail(userEmail);
+            userRepository.findByEmail(userEmail).ifPresent(user -> {
+                // Créer l'objet UserPrincipal pour obtenir les autorités, mais nous n'en aurons plus besoin ensuite.
+                UserPrincipal userPrincipal = new UserPrincipal(user);
 
-            if (userOptional.isPresent()) {
-                User user = userOptional.get();
-
-                // ✅ On attribue une autorité par défaut
-                var authorities = List.of("ROLE_USER");
-
-                UserPrincipal principal = new UserPrincipal(user);
-
-                UsernamePasswordAuthenticationToken authToken =
-                        new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
+                // --- MODIFICATION CLÉ ---
+                // Le premier argument est le "principal". Nous y mettons directement l'entité User.
+                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                        user, // <-- C'EST LE CHANGEMENT QUI RÈGLE TOUT
+                        null,
+                        userPrincipal.getAuthorities() // On peut toujours utiliser le principal pour les autorités
+                );
+                // --- FIN DE LA MODIFICATION ---
 
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authToken);
 
-                System.out.println("✅ Authentifié : " + user.getEmail());
-            } else {
-                System.out.println("❌ Utilisateur introuvable en BDD : " + userEmail);
-            }
+                log.info("✅ Utilisateur authentifié via JWT : {}", user.getEmail());
+            });
         }
 
         filterChain.doFilter(request, response);
