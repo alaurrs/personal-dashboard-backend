@@ -20,7 +20,7 @@ all: help
 
 run: build ## Reconstruit l'image Docker du backend et lance l'environnement (app + db)
 	@echo "🚀 Lancement de l'environnement backend avec Docker Compose..."
-	docker-compose up --build -d
+	docker compose up --build -d
 	@echo "✅ Backend démarré. Utilise 'make logs' pour voir les logs."
 
 build: ## Construit l'application Spring Boot en un fichier JAR exécutable
