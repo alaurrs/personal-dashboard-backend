@@ -44,7 +44,8 @@ public record SpotifyRecentlyPlayedDto(
      */
     public record ArtistDto(
             String id,
-            String name
+            String name,
+            List<ImageDto> images
     ) {}
 
     /** Représente une image (pochette d'album, photo d'artiste). */
