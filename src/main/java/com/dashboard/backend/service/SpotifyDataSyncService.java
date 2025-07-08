@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -30,45 +31,105 @@ public class SpotifyDataSyncService {
     public void syncRecentlyPlayedForUser(User user) {
         log.info("▶️ Démarrage de la synchronisation de l'historique d'écoute pour {}", user.getEmail());
 
-        // --- ÉTAPE 1: EXTRACT ---
-        SpotifyRecentlyPlayedDto recentlyPlayed = spotifyClient.getRecentlyPlayed(user)
-                .orElseThrow(() -> new RuntimeException("L'API Spotify n'a retourné aucun historique."));
-
-        if (recentlyPlayed.items() == null || recentlyPlayed.items().isEmpty()) {
-            log.info("✅ Aucune nouvelle écoute trouvée pour {}.", user.getEmail());
-            return;
+        // --- ÉTAPE 1: DÉTERMINER LE POINT DE DÉPART ---
+        Instant lastPlayedAt = getLastPlayedTimestamp(user);
+        if (lastPlayedAt != null) {
+            log.info("🔄 Synchronisation incrémentale depuis le dernier morceau écouté: {}", lastPlayedAt);
+        } else {
+            log.info("🆕 Première synchronisation - récupération des morceaux récents");
         }
 
-        int newEntriesCount = 0;
-        for (SpotifyRecentlyPlayedDto.Item item : recentlyPlayed.items()) {
-            if (listeningHistoryRepository.existsByUserAndPlayedAt(user, item.playedAt())) {
+        // --- ÉTAPE 2: RÉCUPÉRATION COMPLÈTE AVEC PAGINATION ---
+        int totalNewEntries = 0;
+        boolean hasMoreData = true;
+        Instant currentAfter = lastPlayedAt;
+
+        while (hasMoreData) {
+            // Récupérer les morceaux depuis le timestamp spécifié
+            SpotifyRecentlyPlayedDto recentlyPlayed = spotifyClient.getRecentlyPlayed(user, currentAfter)
+                    .orElseThrow(() -> new RuntimeException("L'API Spotify n'a retourné aucun historique."));
+
+            if (recentlyPlayed.items() == null || recentlyPlayed.items().isEmpty()) {
+                log.info("✅ Aucune nouvelle écoute trouvée pour {}.", user.getEmail());
+                hasMoreData = false;
                 continue;
             }
 
-            // --- ÉTAPE 2: TRANSFORM & LOAD (Dimensions) ---
+            int batchNewEntries = 0;
+            Instant latestPlayedAt = null;
 
-            // 2a. Gérer tous les artistes du morceau. C'est maintenant la seule source de vérité pour les artistes.
-            Set<Artist> artists = item.track().artists().stream()
-                    .map(this::getOrCreateArtist)
-                    .collect(Collectors.toSet());
+            for (SpotifyRecentlyPlayedDto.Item item : recentlyPlayed.items()) {
+                // Vérifier si cette écoute existe déjà pour éviter les doublons
+                if (listeningHistoryRepository.existsByUserAndPlayedAt(user, item.playedAt())) {
+                    log.debug("⏭️ Écoute déjà existante ignorée: {} à {}",
+                            item.track().name(), item.playedAt());
+                    continue;
+                }
 
-            // 2b. Gérer l'album, en lui passant l'ensemble des artistes.
-            Album album = getOrCreateAlbum(item.track().album(), artists);
+                // Traiter et sauvegarder l'écoute
+                processAndSaveListeningEntry(user, item);
+                batchNewEntries++;
 
-            // 2c. Gérer le morceau, en lui passant aussi l'ensemble des artistes.
-            Track track = getOrCreateTrack(item.track(), album, artists);
+                // Garder trace du timestamp le plus récent
+                if (latestPlayedAt == null || item.playedAt().isAfter(latestPlayedAt)) {
+                    latestPlayedAt = item.playedAt();
+                }
+            }
 
-            // --- ÉTAPE 3: LOAD (Fait) ---
-            ListeningHistory historyEntry = new ListeningHistory();
-            historyEntry.setUser(user);
-            historyEntry.setTrack(track);
-            historyEntry.setPlayedAt(item.playedAt());
+            totalNewEntries += batchNewEntries;
+            log.info("📦 Batch traité: {} nouvelles écoutes ajoutées", batchNewEntries);
 
-            listeningHistoryRepository.save(historyEntry);
-            newEntriesCount++;
+            // Vérifier s'il faut continuer la pagination
+            if (batchNewEntries == 0) {
+                // Aucune nouvelle écoute dans ce batch, arrêter
+                hasMoreData = false;
+            } else if (recentlyPlayed.items().size() < 50) {
+                // Moins de 50 résultats = fin des données
+                hasMoreData = false;
+            } else {
+                // Préparer le prochain appel avec le timestamp le plus récent
+                currentAfter = latestPlayedAt;
+                log.debug("🔄 Préparation du prochain batch après: {}", currentAfter);
+            }
         }
 
-        log.info("✅ Synchronisation terminée pour {}. {} nouvelles écoutes ajoutées.", user.getEmail(), newEntriesCount);
+        log.info("✅ Synchronisation terminée pour {}. {} nouvelles écoutes ajoutées au total.",
+                user.getEmail(), totalNewEntries);
+    }
+
+    /**
+     * Récupère le timestamp de la dernière écoute synchronisée pour un utilisateur
+     */
+    private Instant getLastPlayedTimestamp(User user) {
+        return listeningHistoryRepository.findTopByUserOrderByPlayedAtDesc(user)
+                .map(ListeningHistory::getPlayedAt)
+                .orElse(null);
+    }
+
+    /**
+     * Traite et sauvegarde une entrée d'écoute
+     */
+    private void processAndSaveListeningEntry(User user, SpotifyRecentlyPlayedDto.Item item) {
+        // --- ÉTAPE 2: TRANSFORM & LOAD (Dimensions) ---
+
+        // 2a. Gérer tous les artistes du morceau. C'est maintenant la seule source de vérité pour les artistes.
+        Set<Artist> artists = item.track().artists().stream()
+                .map(this::getOrCreateArtist)
+                .collect(Collectors.toSet());
+
+        // 2b. Gérer l'album, en lui passant l'ensemble des artistes.
+        Album album = getOrCreateAlbum(item.track().album(), artists);
+
+        // 2c. Gérer le morceau, en lui passant aussi l'ensemble des artistes.
+        Track track = getOrCreateTrack(item.track(), album, artists);
+
+        // --- ÉTAPE 3: LOAD (Fait) ---
+        ListeningHistory historyEntry = new ListeningHistory();
+        historyEntry.setUser(user);
+        historyEntry.setTrack(track);
+        historyEntry.setPlayedAt(item.playedAt());
+
+        listeningHistoryRepository.save(historyEntry);
     }
 
     private Artist getOrCreateArtist(ArtistDto dto) {
@@ -78,6 +139,12 @@ public class SpotifyDataSyncService {
                     Artist newArtist = new Artist();
                     newArtist.setId(dto.id());
                     newArtist.setName(dto.name());
+
+                    // Ajouter l'URL de l'image si disponible
+                    if (dto.images() != null && !dto.images().isEmpty()) {
+                        newArtist.setImageUrl(dto.images().getFirst().url());
+                    }
+
                     return artistRepository.save(newArtist);
                 });
     }

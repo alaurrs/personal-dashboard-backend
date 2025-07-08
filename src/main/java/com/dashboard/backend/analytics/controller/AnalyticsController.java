@@ -2,6 +2,7 @@ package com.dashboard.backend.analytics.controller;
 
 import com.dashboard.backend.User.model.User;
 import com.dashboard.backend.analytics.dto.TopArtistDto;
+import com.dashboard.backend.analytics.dto.TopTrackDto;
 import com.dashboard.backend.analytics.service.AnalyticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -17,20 +18,49 @@ import java.util.List;
 @RequestMapping("/api/analytics")
 @RequiredArgsConstructor
 public class AnalyticsController {
+
     private final AnalyticsService analyticsService;
 
     @GetMapping("/top-artists")
     public ResponseEntity<List<TopArtistDto>> getTopArtists(
-            @AuthenticationPrincipal User user, // Injecté par Spring Security
-            @RequestParam(defaultValue = "last_6_months") String timeRange,
-            @RequestParam(defaultValue = "10") int limit
+            @AuthenticationPrincipal User user,
+            @RequestParam(defaultValue = "medium_term") String timeRange,
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(defaultValue = "cache") String source // NOUVEAU: Le paramètre qui guide le backend
     ) {
-        // Valider les paramètres (peut être fait avec @Validated)
-        if (!List.of("last_month", "last_6_months", "all_time").contains(timeRange)) {
+        if (!isValidTimeRange(timeRange)) {
             return ResponseEntity.badRequest().build();
         }
 
-        List<TopArtistDto> topArtists = analyticsService.getTopArtistsForUser(user, timeRange, limit);
+        List<TopArtistDto> topArtists;
+
+        // Le backend choisit la stratégie en fonction de l'indice du frontend
+        if ("history".equalsIgnoreCase(source)) {
+            // Demande d'analyse approfondie
+            topArtists = analyticsService.calculateTopArtistsFromHistory(user, timeRange, limit);
+        } else {
+            // Comportement par défaut : rapide, via le cache
+            topArtists = analyticsService.getCachedTopArtistsForUser(user, timeRange, limit);
+        }
+
         return ResponseEntity.ok(topArtists);
+    }
+
+    @GetMapping("/top-tracks")
+    public ResponseEntity<List<TopTrackDto>> getTopTracks(
+            @AuthenticationPrincipal User user,
+            @RequestParam(defaultValue = "medium_term") String timeRange,
+            @RequestParam(defaultValue = "10") int limit
+    ) {
+        if (!isValidTimeRange(timeRange)) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        List<TopTrackDto> topTracks = analyticsService.getTopTracksForUser(user, timeRange, limit);
+        return ResponseEntity.ok(topTracks);
+    }
+
+    private boolean isValidTimeRange(String timeRange) {
+        return List.of("short_term", "medium_term", "all_time").contains(timeRange);
     }
 }

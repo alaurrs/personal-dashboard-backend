@@ -1,6 +1,18 @@
 package com.dashboard.backend.analytics.dto;
-public interface TopArtistDto {
-    String getArtistId();
-    String getArtistName();
-    Long getPlayCount();
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class TopArtistDto {
+
+    private String artistId;
+    private String artistName;
+    private Long playCount;
+    private String artistImageUrl;
 }

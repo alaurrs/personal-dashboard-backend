@@ -24,6 +24,9 @@ public class Artist {
     @Column(nullable = false)
     private String name;
 
+    @Column(name = "image_url", length = 2048)
+    private String imageUrl;
+
     @ManyToMany(mappedBy = "artists", fetch = FetchType.LAZY)
     @ToString.Exclude
     @EqualsAndHashCode.Exclude

@@ -2,6 +2,7 @@ package com.dashboard.backend.thirdparty.spotify;
 
 import com.dashboard.backend.User.model.User;
 import com.dashboard.backend.User.repository.UserRepository;
+import com.dashboard.backend.analytics.dto.TopArtistDto;
 import com.dashboard.backend.exception.UnauthorizedException;
 import com.dashboard.backend.exception.UserNotFoundException;
 import com.dashboard.backend.security.JwtService;
@@ -176,6 +177,7 @@ public class SpotifyService {
         validateLimitParameter(limit);
         return spotifyDataService.getTopArtists(user, timeRange, limit);
     }
+
 
     public Optional<SpotifyTopTracksDto> getTopTracksFromRequest(HttpServletRequest request, String timeRange, int limit) {
         String email = extractAndValidateUserFromRequest(request);

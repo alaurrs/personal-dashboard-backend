@@ -295,6 +295,10 @@ public class SpotifyClient {
     }
 
     public Optional<SpotifyRecentlyPlayedDto> getRecentlyPlayed(User user) {
+        return getRecentlyPlayed(user, null);
+    }
+
+    public Optional<SpotifyRecentlyPlayedDto> getRecentlyPlayed(User user, Instant after) {
         log.debug("Récupération de l'historique d'écoute pour l'utilisateur: {}", user.getEmail());
 
         // 1. Récupère un token valide (gère le refresh automatiquement)
@@ -304,13 +308,16 @@ public class SpotifyClient {
             return Optional.empty();
         }
 
-        // 2. Construire l'URL de l'API
-        // L'API ne retourne que les 50 derniers morceaux. La pagination plus avancée se fait avec les curseurs `after` ou `before`.
-        // Pour une première implémentation, récupérer les 50 derniers est parfait.
-        String url = SPOTIFY_RECENTLY_PLAYED_URL + "?limit=50";
+        // 2. Construire l'URL de l'API avec le paramètre 'after' si fourni
+        StringBuilder urlBuilder = new StringBuilder(SPOTIFY_RECENTLY_PLAYED_URL + "?limit=50");
+        if (after != null) {
+            // Convertir l'Instant en timestamp Unix en millisecondes
+            long afterTimestamp = after.toEpochMilli();
+            urlBuilder.append("&after=").append(afterTimestamp);
+            log.debug("Récupération des morceaux après le timestamp: {} ({})", afterTimestamp, after);
+        }
 
         // 3. Faire l'appel API en utilisant la méthode générique
-        // C'est ici que tu bénéficies de ta bonne architecture !
-        return makeSpotifyApiCall(url, tokenOpt.get(), SpotifyRecentlyPlayedDto.class);
+        return makeSpotifyApiCall(urlBuilder.toString(), tokenOpt.get(), SpotifyRecentlyPlayedDto.class);
     }
 }
