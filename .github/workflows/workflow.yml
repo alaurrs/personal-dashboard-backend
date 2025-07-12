@@ -23,11 +23,16 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} "rm -rf /opt/backend && mkdir -p /opt/backend"
           scp -r ./* ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }}:/opt/backend/
 
-      - name: Remote Docker Compose up
+      - name: Remote Docker Compose up with secrets
         run: |
-          ssh ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} << 'EOF'
+          ssh ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} <<EOF
             cd /opt/backend
             docker compose down || true
-            docker compose build
+            SPRING_DATASOURCE_URL="${{ secrets.SPRING_DATASOURCE_URL }}" \
+            SPRING_DATASOURCE_USERNAME="${{ secrets.SPRING_DATASOURCE_USERNAME }}" \
+            SPRING_DATASOURCE_PASSWORD="${{ secrets.SPRING_DATASOURCE_PASSWORD }}" \
+            JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+            SPOTIFY_CLIENT_ID="${{ secrets.SPOTIFY_CLIENT_ID }}" \
+            SPOTIFY_CLIENT_SECRET="${{ secrets.SPOTIFY_CLIENT_SECRET }}" \
             docker compose up -d
           EOF
