@@ -27,6 +27,7 @@ jobs:
         run: |
           ssh ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} <<EOF
             cd /opt/backend
+            echo "SPRING_PROFILES_ACTIVE=prod" >> .env
             echo "DB_HOST=${{ secrets.DB_HOST }}" > .env
             echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
             echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
