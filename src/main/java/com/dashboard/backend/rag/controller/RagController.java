@@ -1,5 +1,6 @@
 package com.dashboard.backend.rag.controller;
 
+import com.dashboard.backend.rag.model.AnswerResponse;
 import com.dashboard.backend.rag.model.QuestionRequest;
 import com.dashboard.backend.User.model.User;
 import com.dashboard.backend.security.UserPrincipal;
@@ -26,7 +27,7 @@ public class RagController {
     private final SupabaseService supabaseService;
 
     @PostMapping("/ask")
-    public ResponseEntity<String> ask(@RequestBody QuestionRequest questionRequest,
+    public ResponseEntity<AnswerResponse> ask(@RequestBody QuestionRequest questionRequest,
                                       Authentication authentication) {
         User user = (User) authentication.getPrincipal();
         String question = questionRequest.getQuestion();
@@ -37,6 +38,6 @@ public class RagController {
 
         String answer = openAiService.askWithContext(docs, question);
 
-        return ResponseEntity.ok(answer);
+        return ResponseEntity.ok(new AnswerResponse(answer));
     }
 }
