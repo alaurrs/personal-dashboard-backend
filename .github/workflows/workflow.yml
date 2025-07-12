@@ -1,0 +1,33 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Build & Deploy via SSH
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.DO_SSH_KEY }}
+
+      - name: Copy project to droplet
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} "rm -rf /opt/backend && mkdir -p /opt/backend"
+          scp -r ./* ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }}:/opt/backend/
+
+      - name: Remote Docker Compose up
+        run: |
+          ssh ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} << 'EOF'
+            cd /opt/backend
+            docker compose down || true
+            docker compose build
+            docker compose up -d
+          EOF
