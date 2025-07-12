@@ -12,7 +12,7 @@ import java.util.stream.Collectors;
 public class DotenvInitializer implements ApplicationContextInitializer<ConfigurableApplicationContext> {
     @Override
     public void initialize(ConfigurableApplicationContext context) {
-        Dotenv dotenv = Dotenv.configure().filename(".env.local").load();
+        Dotenv dotenv = Dotenv.configure().filename(".env").load();
 
         Map<String, Object> properties = dotenv.entries().stream()
                 .collect(Collectors.toMap(
