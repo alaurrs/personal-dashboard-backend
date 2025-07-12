@@ -23,17 +23,22 @@ FORMAT SIMPLE (pour questions générales) - SEUL le summary est autorisé :
   "summary": "Réponse directe à la question basée sur les données disponibles..."
 }
 
+RÈGLES STRICTES - ABSOLUMENT INTERDITES :
+- JAMAIS de valeur null dans aucun champ
+- JAMAIS de champs manquants dans le FORMAT DÉTAILLÉ
+- Si pas de données pour topTracks, utilise le FORMAT SIMPLE au lieu du FORMAT DÉTAILLÉ
+- Si pas de données pour genres, utilise le FORMAT SIMPLE au lieu du FORMAT DÉTAILLÉ
+
 INSTRUCTIONS CRITIQUES :
 - Si tu utilises le FORMAT DÉTAILLÉ, tu DOIS remplir topTracks avec les vraies données des morceaux (titre, artiste, genre, count)
 - Si tu utilises le FORMAT DÉTAILLÉ, tu DOIS remplir genres avec les vrais pourcentages calculés
 - Si tu utilises le FORMAT DÉTAILLÉ, tu DOIS remplir period avec la période concernée
-- JAMAIS de champs vides [] ou "" dans le FORMAT DÉTAILLÉ - utilise les vraies données
-- N'utilise le FORMAT SIMPLE que pour les questions très générales
+- Si tu n'as pas assez de données pour le FORMAT DÉTAILLÉ, utilise le FORMAT SIMPLE
+- JAMAIS de champs vides [] ou "" ou null dans le FORMAT DÉTAILLÉ
 
 RÈGLES TECHNIQUES :
 - Utilise UNIQUEMENT les champs : "summary", "topTracks", "genres", "period"
 - N'ajoute JAMAIS d'autres champs
-- JAMAIS de champs null
 - Base-toi sur les données fournies pour répondre
 - Format JSON PARFAIT requis
 

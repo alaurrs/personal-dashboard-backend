@@ -129,16 +129,35 @@ public class OpenAiService {
     }
 
     private void validateResponse(AnswerResponse response) {
-        // Si topTracks est présent et non vide, alors genres et period doivent aussi être présents
-        if (response.topTracks() != null && !response.topTracks().isEmpty()) {
-            if (response.genres() == null || response.period() == null || response.period().isEmpty()) {
-                log.warn("Réponse incomplète détectée : topTracks présent mais genres ou period manquant");
+        // Vérifier qu'il n'y a pas de champs null
+        if (response.summary() == null) {
+            throw new RuntimeException("Réponse IA invalide : summary est null");
+        }
+
+        // Si topTracks est présent, vérifier qu'il n'est pas null et que les autres champs requis sont aussi présents
+        if (response.topTracks() != null) {
+            if (response.genres() == null) {
+                throw new RuntimeException("Réponse IA invalide : topTracks présent mais genres est null");
+            }
+            if (response.period() == null) {
+                throw new RuntimeException("Réponse IA invalide : topTracks présent mais period est null");
+            }
+            // Si c'est un format détaillé mais que les champs sont vides, c'est aussi invalide
+            if (response.topTracks().isEmpty() && response.genres().isEmpty()) {
+                throw new RuntimeException("Réponse IA invalide : format détaillé avec champs vides - devrait utiliser format simple");
             }
         }
 
-        // Vérifier que summary n'est pas null
-        if (response.summary() == null) {
-            log.warn("Réponse sans summary détectée");
+        // Vérifier que si genres est présent, topTracks et period le sont aussi
+        if (response.genres() != null && (response.topTracks() == null || response.period() == null)) {
+            throw new RuntimeException("Réponse IA invalide : genres présent mais topTracks ou period manquant");
         }
+
+        // Vérifier que si period est présent, topTracks et genres le sont aussi
+        if (response.period() != null && (response.topTracks() == null || response.genres() == null)) {
+            throw new RuntimeException("Réponse IA invalide : period présent mais topTracks ou genres manquant");
+        }
+
+        log.info("Validation réussie : réponse IA cohérente");
     }
 }
