@@ -11,6 +11,7 @@ import lombok.EqualsAndHashCode;
 import lombok.ToString;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Entity
@@ -26,6 +27,9 @@ public class Artist {
 
     @Column(name = "image_url", length = 2048)
     private String imageUrl;
+
+    @Column(name = "genres", columnDefinition = "text[]")
+    private List<String> genres;
 
     @ManyToMany(mappedBy = "artists", fetch = FetchType.LAZY)
     @ToString.Exclude

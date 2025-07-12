@@ -111,14 +111,39 @@ public class SpotifyDataSyncService {
     }
 
     /**
-     * Traite et sauvegarde une entrée d'écoute
+     * Enrichit un artiste existant avec ses genres récupérés depuis l'API Spotify.
+     * Cette méthode est appelée pour s'assurer que les genres sont toujours à jour.
+     */
+    private void enrichArtistWithGenres(Artist artist, User user) {
+        // Ne récupérer les genres que si l'artiste n'en a pas encore ou si ils sont vides
+        if (artist.getGenres() == null || artist.getGenres().isEmpty()) {
+            log.debug("Récupération des genres pour l'artiste: {} ({})", artist.getName(), artist.getId());
+
+            spotifyClient.getArtistDetails(user, artist.getId())
+                .ifPresent(artistDetails -> {
+                    if (artistDetails.genres() != null && !artistDetails.genres().isEmpty()) {
+                        artist.setGenres(artistDetails.genres());
+                        artistRepository.save(artist);
+                        log.debug("Genres ajoutés pour {}: {}", artist.getName(), artistDetails.genres());
+                    }
+                });
+        }
+    }
+
+    /**
+     * Traite et sauvegarde une entrée d'écoute avec enrichissement des genres
      */
     private void processAndSaveListeningEntry(User user, SpotifyRecentlyPlayedDto.Item item) {
         // --- ÉTAPE 2: TRANSFORM & LOAD (Dimensions) ---
 
-        // 2a. Gérer tous les artistes du morceau. C'est maintenant la seule source de vérité pour les artistes.
+        // 2a. Gérer tous les artistes du morceau et enrichir avec les genres
         Set<Artist> artists = item.track().artists().stream()
-                .map(this::getOrCreateArtist)
+                .map(artistDto -> {
+                    Artist artist = getOrCreateArtist(artistDto);
+                    // Enrichir l'artiste avec ses genres
+                    enrichArtistWithGenres(artist, user);
+                    return artist;
+                })
                 .collect(Collectors.toSet());
 
         // 2b. Gérer l'album, en lui passant l'ensemble des artistes.
@@ -183,7 +208,31 @@ public class SpotifyDataSyncService {
                     // La modification clé est ici : on assigne l'ensemble des artistes, pas un seul.
                     newTrack.setArtists(artists);
                     newTrack.setDurationMs(dto.durationMs());
-                    return trackRepository.save(newTrack);
+
+                    // Sauvegarder d'abord le track
+                    Track savedTrack = trackRepository.save(newTrack);
+
+                    // Puis associer automatiquement les genres via les artistes
+                    associateGenresToTrack(savedTrack);
+
+                    return savedTrack;
                 });
+    }
+
+    /**
+     * Associe automatiquement les genres d'un track basés sur ses artistes.
+     * Les genres sont récupérés depuis tous les artistes associés au track.
+     */
+    private void associateGenresToTrack(Track track) {
+        Set<String> allGenres = track.getArtists().stream()
+                .filter(artist -> artist.getGenres() != null)
+                .flatMap(artist -> artist.getGenres().stream())
+                .collect(Collectors.toSet());
+
+        if (!allGenres.isEmpty()) {
+            track.setGenres(allGenres);
+            trackRepository.save(track);
+            log.debug("Genres associés au track '{}': {}", track.getName(), allGenres);
+        }
     }
 }

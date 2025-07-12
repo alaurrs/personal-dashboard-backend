@@ -1,13 +1,16 @@
 package com.dashboard.backend.rag.model;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import java.util.List;
 
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
-public class AnswerResponse {
-    private String answer;
+public record AnswerResponse(
+        String summary,
+        List<TrackStat> topTracks,
+        List<GenreStat> genres,
+        String period) {
 }
 
+record TrackStat(String title, String artist, String genre, int count) {
+}
+
+record GenreStat(String name, double percentage) {
+}

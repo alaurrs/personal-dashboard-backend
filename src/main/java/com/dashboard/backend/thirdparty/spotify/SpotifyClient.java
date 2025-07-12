@@ -4,6 +4,7 @@ import com.dashboard.backend.User.model.SpotifyAccount;
 import com.dashboard.backend.User.model.User;
 import com.dashboard.backend.User.repository.UserRepository;
 import com.dashboard.backend.service.SpotifyAccountService;
+import com.dashboard.backend.thirdparty.spotify.dto.SpotifyArtistDto;
 import com.dashboard.backend.thirdparty.spotify.dto.SpotifyProfileDto;
 import com.dashboard.backend.thirdparty.spotify.dto.SpotifyRecentlyPlayedDto;
 import com.dashboard.backend.thirdparty.spotify.dto.SpotifyTopArtistsDto;
@@ -37,6 +38,7 @@ public class SpotifyClient {
 
     private static final String SPOTIFY_TOP_TRACKS_URL = "https://api.spotify.com/v1/me/top/tracks";
     private static final String SPOTIFY_RECENTLY_PLAYED_URL = "https://api.spotify.com/v1/me/player/recently-played";
+    private static final String SPOTIFY_ARTIST_URL = "https://api.spotify.com/v1/artists/";
 
     private static final int TOKEN_REFRESH_BUFFER_SECONDS = 60;
 
@@ -319,5 +321,51 @@ public class SpotifyClient {
 
         // 3. Faire l'appel API en utilisant la méthode générique
         return makeSpotifyApiCall(urlBuilder.toString(), tokenOpt.get(), SpotifyRecentlyPlayedDto.class);
+    }
+
+    /**
+     * Récupère les détails complets d'un artiste depuis l'API Spotify, incluant ses genres
+     */
+    public Optional<SpotifyArtistDto> getArtistDetails(User user, String artistId) {
+        log.debug("Récupération des détails de l'artiste: {} pour l'utilisateur: {}", artistId, user.getEmail());
+
+        Optional<String> tokenOpt = getAccessToken(user);
+        if (tokenOpt.isEmpty()) {
+            log.warn("Impossible de récupérer un token valide pour l'utilisateur: {}", user.getEmail());
+            return Optional.empty();
+        }
+
+        try {
+            HttpHeaders headers = createApiRequestHeaders(tokenOpt.get());
+            HttpEntity<Void> request = new HttpEntity<>(headers);
+
+            String url = SPOTIFY_ARTIST_URL + artistId;
+            ResponseEntity<String> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    request,
+                    String.class
+            );
+
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                SpotifyArtistDto artist = objectMapper.readValue(response.getBody(), SpotifyArtistDto.class);
+                log.debug("Détails de l'artiste {} récupérés avec succès. Genres: {}",
+                         artist.name(), artist.genres());
+                return Optional.of(artist);
+            } else {
+                log.error("Échec de la récupération des détails de l'artiste {}. Status: {}",
+                         artistId, response.getStatusCode());
+                return Optional.empty();
+            }
+
+        } catch (RestClientException e) {
+            log.error("Erreur réseau lors de la récupération des détails de l'artiste {} pour l'utilisateur: {}",
+                     artistId, user.getEmail(), e);
+            return Optional.empty();
+        } catch (Exception e) {
+            log.error("Erreur lors de la récupération des détails de l'artiste {} pour l'utilisateur: {}",
+                     artistId, user.getEmail(), e);
+            return Optional.empty();
+        }
     }
 }

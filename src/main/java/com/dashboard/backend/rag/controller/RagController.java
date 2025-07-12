@@ -36,8 +36,8 @@ public class RagController {
 
         List<String> docs = supabaseService.queryRelevantDocuments(user.getId(), embedding);
 
-        String answer = openAiService.askWithContext(docs, question);
+        AnswerResponse answer = openAiService.askWithContext(docs, question);
 
-        return ResponseEntity.ok(new AnswerResponse(answer));
+        return ResponseEntity.ok(answer);
     }
 }

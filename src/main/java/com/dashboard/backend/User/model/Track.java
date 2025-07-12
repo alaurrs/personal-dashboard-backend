@@ -1,7 +1,9 @@
 package com.dashboard.backend.User.model;
 
 import jakarta.persistence.CascadeType;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
@@ -42,6 +44,14 @@ public class Track {
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     private Set<Artist> artists = new HashSet<>();
+
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+            name = "track_genres",
+            joinColumns = @JoinColumn(name = "track_id")
+    )
+    @Column(name = "genre")
+    private Set<String> genres = new HashSet<>();
 
     @Column(name = "duration_ms")
     private int durationMs;
