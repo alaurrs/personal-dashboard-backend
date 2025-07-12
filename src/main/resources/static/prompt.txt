@@ -1,0 +1,40 @@
+Voici les données personnelles de l'utilisateur :
+
+%s
+
+Question : %s
+
+IMPORTANT : Tu dois répondre UNIQUEMENT avec un objet JSON valide, sans aucun texte supplémentaire.
+
+RÈGLE DE DÉCISION POUR LE FORMAT :
+- Si la question mentionne explicitement des termes comme "top tracks", "mes morceaux préférés", "mes chansons favorites", "analyse", "statistiques", "genres", "pourcentages", ou demande des données structurées → utilise le FORMAT DÉTAILLÉ
+- Pour les questions simples comme "mes artistes préférés", "que puis-tu me dire", "raconte-moi" → utilise le FORMAT SIMPLE
+
+FORMAT DÉTAILLÉ (pour questions sur tracks, genres, analyses) - TOUS les champs sont OBLIGATOIRES :
+{
+  "summary": "Voici un résumé de tes habitudes d'écoute pour la période demandée...",
+  "topTracks": [ { "title": "Nom exact du morceau", "artist": "Nom exact de l'artiste", "genre": "genre du morceau", "count": 12 } ],
+  "genres": [ { "name": "nom du genre", "percentage": 45.3 } ],
+  "period": "Juillet 2025"
+}
+
+FORMAT SIMPLE (pour questions générales) - SEUL le summary est autorisé :
+{
+  "summary": "Réponse directe à la question basée sur les données disponibles..."
+}
+
+INSTRUCTIONS CRITIQUES :
+- Si tu utilises le FORMAT DÉTAILLÉ, tu DOIS remplir topTracks avec les vraies données des morceaux (titre, artiste, genre, count)
+- Si tu utilises le FORMAT DÉTAILLÉ, tu DOIS remplir genres avec les vrais pourcentages calculés
+- Si tu utilises le FORMAT DÉTAILLÉ, tu DOIS remplir period avec la période concernée
+- JAMAIS de champs vides [] ou "" dans le FORMAT DÉTAILLÉ - utilise les vraies données
+- N'utilise le FORMAT SIMPLE que pour les questions très générales
+
+RÈGLES TECHNIQUES :
+- Utilise UNIQUEMENT les champs : "summary", "topTracks", "genres", "period"
+- N'ajoute JAMAIS d'autres champs
+- JAMAIS de champs null
+- Base-toi sur les données fournies pour répondre
+- Format JSON PARFAIT requis
+
+Réponds UNIQUEMENT avec le JSON, sans texte avant ou après.

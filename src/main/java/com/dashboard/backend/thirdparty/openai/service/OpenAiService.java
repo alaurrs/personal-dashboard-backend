@@ -7,17 +7,21 @@ import com.dashboard.backend.thirdparty.openai.model.OpenAiChatRequest;
 import com.dashboard.backend.thirdparty.openai.model.OpenAiChatResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OpenAiService {
 
     private final RestTemplate restTemplate;
@@ -48,34 +52,10 @@ public class OpenAiService {
 
     public AnswerResponse askWithContext(List<String> docs, String question) {
         String context = docs.stream().collect(Collectors.joining("\n\n"));
-        String prompt = """
-        Voici les données personnelles de l'utilisateur :
 
-        %s
-
-        Question : %s
-
-        Nous sommes actuellement en juillet 2025. Si la question fait référence à "ce mois-ci", "ce mois", ou "actuellement", cela correspond à juillet 2025.
-
-        Réponds de façon claire et concise. Formate ta réponse sous la forme d'un json comme ceci s'il s'agit d'une question concernant de près ou de loin des données musicales (Spotify...):
-   
-                    {
-                      "summary": "Voici un résumé de tes habitudes d'écoute pour la période demandée...",
-                      "topTracks": [ { "title": "Nom du morceau", "artist": "Nom de l'artiste", "genre": "pop", "count": 12 }, ... ],
-                      "genres": [ { "name": "pop", "percentage": 45.3 }, { "name": "rock", "percentage": 23.7 }, ... ],
-                      "period": "Juillet 2025"
-                    }
-                    
-        Si la question ne concerne pas les données musicales, réponds simplement avec un texte clair et concis.
-        Toutefois, si la question concerne les données musicales, retourne uniquement un objet JSON valide. N'ajoute aucun commentaire ni texte supplémentaire.
-        
-        INSTRUCTIONS IMPORTANTES :
-        - Pour les topTracks : utilise les données exactes des tracks avec leurs compteurs d'écoute
-        - Pour les genres : calcule les pourcentages basés sur le nombre total de tracks de chaque genre
-        - Pour la période : utilise le format "Mois Année" (ex: "Juillet 2025")
-        - Si les données concernent plusieurs mois, indique la plage (ex: "Avril - Juin 2025")
-        - Le champ "genre" dans topTracks doit contenir le genre principal du morceau
-        """.formatted(String.join("\n", context), question);
+        // Lire le prompt depuis le fichier prompt.txt
+        String promptTemplate = loadPromptTemplate();
+        String prompt = promptTemplate.formatted(context, question);
 
         String url = "https://api.openai.com/v1/chat/completions";
 
@@ -92,12 +72,73 @@ public class OpenAiService {
 
         // Convert response to JSON string
         String responseJson = response.getBody().getChoices().get(0).getMessage().getContent();
+        log.info("Réponse brute de l'IA : {}", responseJson);
 
         try {
+            // Nettoyer le JSON avant parsing
+            String cleanedJson = cleanJsonResponse(responseJson);
+            log.info("JSON nettoyé : {}", cleanedJson);
+
             ObjectMapper mapper = new ObjectMapper();
-            return mapper.readValue(responseJson, AnswerResponse.class);
+            AnswerResponse result = mapper.readValue(cleanedJson, AnswerResponse.class);
+
+            // Valider que la réponse est cohérente
+            validateResponse(result);
+
+            return result;
         } catch (IOException e) {
+            log.error("Erreur lors du parsing JSON. JSON original: {}", responseJson, e);
             throw new RuntimeException("Erreur lors du parsing JSON de la réponse IA", e);
+        }
+    }
+
+    private String loadPromptTemplate() {
+        try {
+            ClassPathResource resource = new ClassPathResource("static/prompt.txt");
+            return resource.getContentAsString(StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            log.error("Erreur lors de la lecture du fichier prompt.txt", e);
+            throw new RuntimeException("Impossible de charger le template de prompt", e);
+        }
+    }
+
+    private String cleanJsonResponse(String jsonResponse) {
+        // Supprimer les espaces en début et fin
+        String cleaned = jsonResponse.trim();
+
+        // Supprimer les virgules en fin d'objet ou de tableau
+        cleaned = cleaned.replaceAll(",\\s*}", "}");
+        cleaned = cleaned.replaceAll(",\\s*]", "]");
+
+        // S'assurer que la réponse commence et finit par des accolades
+        if (!cleaned.startsWith("{")) {
+            int startIndex = cleaned.indexOf("{");
+            if (startIndex != -1) {
+                cleaned = cleaned.substring(startIndex);
+            }
+        }
+
+        if (!cleaned.endsWith("}")) {
+            int endIndex = cleaned.lastIndexOf("}");
+            if (endIndex != -1) {
+                cleaned = cleaned.substring(0, endIndex + 1);
+            }
+        }
+
+        return cleaned;
+    }
+
+    private void validateResponse(AnswerResponse response) {
+        // Si topTracks est présent et non vide, alors genres et period doivent aussi être présents
+        if (response.topTracks() != null && !response.topTracks().isEmpty()) {
+            if (response.genres() == null || response.period() == null || response.period().isEmpty()) {
+                log.warn("Réponse incomplète détectée : topTracks présent mais genres ou period manquant");
+            }
+        }
+
+        // Vérifier que summary n'est pas null
+        if (response.summary() == null) {
+            log.warn("Réponse sans summary détectée");
         }
     }
 }
