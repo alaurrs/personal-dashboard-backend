@@ -30,28 +30,36 @@ jobs:
 
       - name: Copy project to droplet
         run: |
+          echo "📦 Copying backend to remote server..."
           ssh -o StrictHostKeyChecking=no ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} "rm -rf /opt/backend && mkdir -p /opt/backend"
           scp -r ./* ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }}:/opt/backend/
 
-      - name: Create .env file and deploy
+      - name: Create .env and deploy
         run: |
-          ssh ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} <<EOF
+          echo "🚀 Starting remote deploy via SSH..."
+          ssh -o StrictHostKeyChecking=no ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} <<'EOF'
+            set -euo pipefail
             cd /opt/backend
 
-            echo "SPRING_PROFILES_ACTIVE=prod" > .env
-            echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
-            echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
-            echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
-            echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
-            echo "DB_USER=${{ secrets.DB_USER }}" >> .env
-            echo "FRONTEND_URL=${{ secrets.FRONTEND_URL }}" >> .env
-            echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
-            echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> .env
-            echo "SPOTIFY_CLIENT=${{ secrets.SPOTIFY_CLIENT }}" >> .env
-            echo "SPOTIFY_CLIENT_SECRET=${{ secrets.SPOTIFY_CLIENT_SECRET }}" >> .env
-            echo "SPOTIFY_REDIRECT_URI=${{ secrets.SPOTIFY_REDIRECT_URI }}" >> .env
-
-            docker compose build
+            echo "🔧 Writing .env file..."
+            cat <<EOT > .env
+            SPRING_PROFILES_ACTIVE=prod
+            DB_HOST=${{ secrets.DB_HOST }}
+            DB_NAME=${{ secrets.DB_NAME }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            DB_PORT=${{ secrets.DB_PORT }}
+            DB_USER=${{ secrets.DB_USER }}
+            FRONTEND_URL=${{ secrets.FRONTEND_URL }}
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            SPOTIFY_CLIENT=${{ secrets.SPOTIFY_CLIENT }}
+            SPOTIFY_CLIENT_SECRET=${{ secrets.SPOTIFY_CLIENT_SECRET }}
+            SPOTIFY_REDIRECT_URI=${{ secrets.SPOTIFY_REDIRECT_URI }}
+            EOT
+            
+            echo "🧱 Building and starting containers..."
             docker compose down || true
-            docker compose up -d
-          EOF
+            docker compose up -d --build
+            
+            echo "✅ Deployment complete."
+            EOF
