@@ -2,6 +2,7 @@ package com.dashboard.backend.service;
 
 import com.dashboard.backend.User.model.*;
 import com.dashboard.backend.User.repository.*;
+import com.dashboard.backend.rag.service.UserDocumentGenerationService;
 import com.dashboard.backend.thirdparty.spotify.SpotifyClient;
 import com.dashboard.backend.thirdparty.spotify.dto.SpotifyRecentlyPlayedDto;
 import com.dashboard.backend.thirdparty.spotify.dto.SpotifyRecentlyPlayedDto.TrackDto;
@@ -26,6 +27,7 @@ public class SpotifyDataSyncService {
     private final TrackRepository trackRepository;
     private final AlbumRepository albumRepository;
     private final ArtistRepository artistRepository;
+    private final UserDocumentGenerationService userDocumentGenerationService;
 
     @Transactional
     public void syncRecentlyPlayedForUser(User user) {
@@ -92,6 +94,8 @@ public class SpotifyDataSyncService {
                 log.debug("🔄 Préparation du prochain batch après: {}", currentAfter);
             }
         }
+
+        userDocumentGenerationService.generateFromListeningHistory(user);
 
         log.info("✅ Synchronisation terminée pour {}. {} nouvelles écoutes ajoutées au total.",
                 user.getEmail(), totalNewEntries);

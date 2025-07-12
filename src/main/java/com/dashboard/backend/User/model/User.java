@@ -44,15 +44,13 @@ public class User {
         this.email = email;
         this.passwordHash = passwordHash;
         this.fullName = fullName;
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
     }
 
     @PrePersist
     public void prePersist() {
         LocalDateTime now = LocalDateTime.now();
         if (this.createdAt == null) this.createdAt = now;
-        if (this.updatedAt == null) this.updatedAt = now;
+        this.updatedAt = now;
     }
 
     @PreUpdate

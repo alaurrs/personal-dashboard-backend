@@ -19,4 +19,6 @@ public interface ListeningHistoryRepository extends JpaRepository<ListeningHisto
 
     long countByUser(User user);
     List<ListeningHistory> findByUserAndPlayedAtBetween(User user, Instant startDate, Instant endDate);
+
+    List<ListeningHistory> findByUser(User user);
 }
