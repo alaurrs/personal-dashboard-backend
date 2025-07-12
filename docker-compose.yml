@@ -12,4 +12,4 @@ services:
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
     env_file:
-      - .env.local  # facultatif, utilisé uniquement en local
+      - .env # facultatif, utilisé uniquement en local
