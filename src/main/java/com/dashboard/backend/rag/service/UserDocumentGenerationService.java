@@ -158,7 +158,7 @@ public class UserDocumentGenerationService {
 
         String topArtists = artistCount.entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .limit(5)
+                .limit(15)
                 .map(e -> e.getKey() + " (" + e.getValue() + " écoutes)")
                 .collect(Collectors.joining(", "));
 
@@ -193,7 +193,7 @@ public class UserDocumentGenerationService {
                 .collect(Collectors.groupingBy(Artist::getName, Collectors.counting()))
                 .entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .limit(5)
+                .limit(15)
                 .map(e -> e.getKey() + " (" + e.getValue() + " écoutes)")
                 .collect(Collectors.joining(", "));
 
@@ -203,7 +203,7 @@ public class UserDocumentGenerationService {
                 .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()))
                 .entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .limit(5)
+                .limit(15)
                 .map(e -> e.getKey() + " (" + e.getValue() + " fois)")
                 .collect(Collectors.joining(", "));
 
@@ -273,7 +273,7 @@ public class UserDocumentGenerationService {
         // Top tracks avec leurs artistes
         String topTracksWithArtists = trackPlayData.values().stream()
                 .sorted((a, b) -> Integer.compare(b.playCount(), a.playCount()))
-                .limit(5)
+                .limit(15)
                 .map(data -> String.format("%s par %s (%d écoutes)",
                     data.trackName(),
                     String.join(", ", data.artistNames()),
@@ -287,7 +287,7 @@ public class UserDocumentGenerationService {
 
         String topArtists = artistCount.entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .limit(5)
+                .limit(15)
                 .map(e -> e.getKey() + " (" + e.getValue() + " écoutes)")
                 .collect(Collectors.joining(", "));
 
