@@ -12,6 +12,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.format.TextStyle;
@@ -30,48 +32,172 @@ public class UserDocumentGenerationService {
 
     @Transactional
     public void generateFromListeningHistory(User user) {
-        log.info("🎯 Génération RAG pour {}", user.getEmail());
+        log.info("🎯 Génération RAG exhaustive pour {}", user.getEmail());
 
         List<ListeningHistory> history = listeningHistoryRepository.findByUser(user);
         if (history.isEmpty()) return;
 
-        // 1. Résumés par mois avec contexte enrichi
+        // Nettoyer d'abord les anciennes données obsolètes
+        cleanupObsoleteDocuments(user.getId());
+
+        // 1. Générer les rapports pour chaque mois disponible
+        generateMonthlyReports(user, history);
+
+        // 2. Générer le rapport des dernières 24h
+        generateLast24HoursReport(user, history);
+
+        // 3. Générer le rapport des 7 derniers jours
+        generateLast7DaysReport(user, history);
+
+        // 4. Conserver les rapports globaux existants
+        generateGlobalReports(user, history);
+
+        log.info("✅ Génération RAG exhaustive terminée pour {}", user.getEmail());
+    }
+
+    /**
+     * Nettoie les documents obsolètes selon les règles de rétention
+     */
+    private void cleanupObsoleteDocuments(UUID userId) {
+        log.info("🧹 Nettoyage des documents obsolètes pour user {}", userId);
+
+        // Supprimer les rapports quotidiens de plus de 7 jours
+        String cleanupDaily = """
+            DELETE FROM user_documents 
+            WHERE user_id = ? 
+            AND summary_type = 'daily' 
+            AND metadata->>'date' < ?
+        """;
+        String sevenDaysAgo = LocalDate.now().minusDays(7).toString();
+        int deletedDaily = jdbc.update(cleanupDaily, userId, sevenDaysAgo);
+
+        // Supprimer les anciens rapports hebdomadaires (garder seulement les 4 dernières semaines)
+        String cleanupWeekly = """
+            DELETE FROM user_documents 
+            WHERE user_id = ? 
+            AND summary_type = 'weekly' 
+            AND metadata->>'week_start' < ?
+        """;
+        String fourWeeksAgo = LocalDate.now().minusWeeks(4).toString();
+        int deletedWeekly = jdbc.update(cleanupWeekly, userId, fourWeeksAgo);
+
+        log.info("🗑️ Supprimé {} rapports quotidiens et {} rapports hebdomadaires obsolètes",
+                deletedDaily, deletedWeekly);
+    }
+
+    /**
+     * Génère tous les rapports mensuels pour chaque mois de données
+     */
+    private void generateMonthlyReports(User user, List<ListeningHistory> history) {
         Map<YearMonth, List<ListeningHistory>> byMonth = history.stream()
                 .collect(Collectors.groupingBy(h -> YearMonth.from(h.getPlayedAt().atZone(ZoneId.systemDefault()).toLocalDate())));
 
         for (var entry : byMonth.entrySet()) {
-            String summary = summarizeByMonthEnriched(entry.getKey(), entry.getValue());
-            float[] embedding = openAiService.getEmbedding(summary);
+            YearMonth month = entry.getKey();
+            List<ListeningHistory> monthHistory = entry.getValue();
 
-            // Métadonnées enrichies pour le mois
-            Map<String, Object> metadata = buildEnrichedMonthlyMetadata(entry.getKey(), entry.getValue());
+            log.info("📅 Génération rapport mensuel pour {}", month);
+
+            // Rapport mensuel enrichi
+            String summary = summarizeByMonthEnriched(month, monthHistory);
+            float[] embedding = openAiService.getEmbedding(summary);
+            Map<String, Object> metadata = buildEnrichedMonthlyMetadata(month, monthHistory);
             insertUserDocument(user.getId(), summary, "spotify", "monthly", embedding, metadata);
 
-            // Générer aussi un résumé structuré spécialement pour les requêtes IA
-            String structuredSummary = generateStructuredMonthlySummary(entry.getKey(), entry.getValue());
+            // Rapport mensuel structuré pour l'IA
+            String structuredSummary = generateStructuredMonthlySummary(month, monthHistory);
             float[] structuredEmbedding = openAiService.getEmbedding(structuredSummary);
             insertUserDocument(user.getId(), structuredSummary, "spotify", "monthly_structured", structuredEmbedding, metadata);
         }
+    }
 
-        // 2. Résumé global par heure (ex : "écoute le matin")
+    /**
+     * Génère le rapport des dernières 24 heures
+     */
+    private void generateLast24HoursReport(User user, List<ListeningHistory> history) {
+        Instant now = Instant.now();
+        Instant yesterday = now.minusSeconds(24 * 60 * 60); // 24 heures en secondes
+
+        List<ListeningHistory> last24Hours = history.stream()
+                .filter(h -> h.getPlayedAt().isAfter(yesterday))
+                .collect(Collectors.toList());
+
+        if (last24Hours.isEmpty()) {
+            log.info("⏸️ Aucune donnée pour les dernières 24h");
+            return;
+        }
+
+        log.info("🕐 Génération rapport 24h ({} écoutes)", last24Hours.size());
+
+        String summary = generateLast24HoursSummary(last24Hours);
+        float[] embedding = openAiService.getEmbedding(summary);
+
+        Map<String, Object> metadata = Map.of(
+                "period_type", "daily",
+                "date", LocalDate.now().toString(),
+                "total_plays", last24Hours.size(),
+                "period_start", yesterday.toString(),
+                "period_end", now.toString()
+        );
+
+        insertUserDocument(user.getId(), summary, "spotify", "daily", embedding, metadata);
+    }
+
+    /**
+     * Génère le rapport des 7 derniers jours
+     */
+    private void generateLast7DaysReport(User user, List<ListeningHistory> history) {
+        Instant now = Instant.now();
+        Instant weekAgo = now.minusSeconds(7 * 24 * 60 * 60); // 7 jours en secondes
+
+        List<ListeningHistory> lastWeek = history.stream()
+                .filter(h -> h.getPlayedAt().isAfter(weekAgo))
+                .collect(Collectors.toList());
+
+        if (lastWeek.isEmpty()) {
+            log.info("⏸️ Aucune donnée pour les 7 derniers jours");
+            return;
+        }
+
+        log.info("📊 Génération rapport hebdomadaire ({} écoutes)", lastWeek.size());
+
+        String summary = generateLast7DaysSummary(lastWeek);
+        float[] embedding = openAiService.getEmbedding(summary);
+
+        Map<String, Object> metadata = Map.of(
+                "period_type", "weekly",
+                "week_start", weekAgo.atZone(ZoneId.systemDefault()).toLocalDate().toString(),
+                "week_end", now.atZone(ZoneId.systemDefault()).toLocalDate().toString(),
+                "total_plays", lastWeek.size()
+        );
+
+        insertUserDocument(user.getId(), summary, "spotify", "weekly", embedding, metadata);
+    }
+
+    /**
+     * Génère les rapports globaux (patterns d'écoute par heure, top tracks all-time)
+     */
+    private void generateGlobalReports(User user, List<ListeningHistory> history) {
+        // Patterns d'écoute par heure
         Map<Integer, Long> byHour = history.stream()
                 .collect(Collectors.groupingBy(h -> h.getPlayedAt().atZone(ZoneId.systemDefault()).getHour(), Collectors.counting()));
         String hourlySummary = summarizeByHour(byHour);
         float[] embedding = openAiService.getEmbedding(hourlySummary);
-        Map<String, Object> metadata = Map.of(
+        Map<String, Object> hourlyMetadata = Map.of(
+                "pattern_type", "hourly_listening",
                 "top_hours", byHour.entrySet().stream()
                         .sorted(Map.Entry.<Integer, Long>comparingByValue().reversed())
                         .limit(3)
                         .map(e -> String.format("entre %dh et %dh (%d écoutes)", e.getKey(), e.getKey() + 1, e.getValue()))
                         .collect(Collectors.joining(", "))
         );
-        insertUserDocument(user.getId(), hourlySummary, "spotify", "hourly", embedding, metadata);
+        insertUserDocument(user.getId(), hourlySummary, "spotify", "hourly_patterns", embedding, hourlyMetadata);
 
-        // 3. Résumé global des top tracks avec contexte enrichi
+        // Top tracks all-time
         String globalTopTracks = summarizeTopTracksGlobalEnriched(history);
         embedding = openAiService.getEmbedding(globalTopTracks);
-        metadata = buildEnrichedGlobalTracksMetadata(history);
-        insertUserDocument(user.getId(), globalTopTracks, "spotify", "top_tracks_global", embedding, metadata);
+        Map<String, Object> globalMetadata = buildEnrichedGlobalTracksMetadata(history);
+        insertUserDocument(user.getId(), globalTopTracks, "spotify", "top_tracks_global", embedding, globalMetadata);
     }
 
     /**
@@ -97,7 +223,9 @@ public class UserDocumentGenerationService {
                                     first.getTrack().getName(),
                                     artistNames,
                                     historyList.size(),
-                                    genres
+                                    genres,
+                                    first.getTrack().getAlbum().getName(),
+                                    first.getTrack().getDurationMs()
                             );
                         }
                     )
@@ -121,13 +249,16 @@ public class UserDocumentGenerationService {
                 month.getMonth().getDisplayName(TextStyle.FULL, Locale.FRENCH),
                 month.getYear()));
 
-        summary.append("TOP TRACKS AVEC DÉTAILS :\n");
+        summary.append("TOP TRACKS AVEC DÉTAILS COMPLETS :\n");
         for (TrackPlayData track : topTracks) {
             String genresList = track.genres().isEmpty() ? "genre inconnu" : String.join(", ", track.genres());
-            summary.append(String.format("- \"%s\" par %s [%s] : %d écoutes\n",
+            String durationText = String.format("(%d:%02d)", track.durationMs() / 60000, (track.durationMs() % 60000) / 1000);
+            summary.append(String.format("- \"%s\" par %s [Album: %s] [Genres: %s] [Durée: %s] : %d écoutes\n",
                     track.trackName(),
                     String.join(", ", track.artistNames()),
+                    track.albumName() != null ? track.albumName() : "Album inconnu",
                     genresList,
+                    durationText,
                     track.playCount()));
         }
 
@@ -187,29 +318,82 @@ public class UserDocumentGenerationService {
         jdbc.update(sql, UUID.randomUUID(), userId, source, summaryType, content, pgVector, metadataJson);
     }
     private String summarizeByMonth(YearMonth month, List<ListeningHistory> history) {
-        // Top artistes
-        String topArtists = history.stream()
+        // Analyser les tracks avec leurs détails complets
+        Map<String, TrackPlayData> trackPlayData = history.stream()
+                .collect(Collectors.groupingBy(
+                    h -> h.getTrack().getId(),
+                    Collectors.collectingAndThen(
+                        Collectors.toList(),
+                        historyList -> {
+                            ListeningHistory first = historyList.get(0);
+                            List<String> artistNames = first.getTrack().getArtists().stream()
+                                    .map(Artist::getName)
+                                    .sorted()
+                                    .toList();
+                            Set<String> genres = first.getTrack().getGenres() != null ?
+                                    first.getTrack().getGenres() : Set.of();
+                            return new TrackPlayData(
+                                    first.getTrack().getName(),
+                                    artistNames,
+                                    historyList.size(),
+                                    genres,
+                                    first.getTrack().getAlbum().getName(),
+                                    first.getTrack().getDurationMs()
+                            );
+                        }
+                    )
+                ));
+
+        // Top artistes avec détails
+        Map<String, Long> artistCount = history.stream()
                 .flatMap(h -> h.getTrack().getArtists().stream())
-                .collect(Collectors.groupingBy(Artist::getName, Collectors.counting()))
-                .entrySet().stream()
+                .collect(Collectors.groupingBy(Artist::getName, Collectors.counting()));
+
+        String topArtists = artistCount.entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
                 .limit(15)
                 .map(e -> e.getKey() + " (" + e.getValue() + " écoutes)")
                 .collect(Collectors.joining(", "));
 
-        // Top morceaux
-        String topTracks = history.stream()
-                .map(h -> h.getTrack().getName())
-                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()))
-                .entrySet().stream()
-                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .limit(15)
-                .map(e -> e.getKey() + " (" + e.getValue() + " fois)")
+        // Top morceaux avec détails complets (titre, artiste, album, genre, durée)
+        String topTracks = trackPlayData.values().stream()
+                .sorted((a, b) -> Integer.compare(b.playCount(), a.playCount()))
+                .limit(10)
+                .map(data -> {
+                    String genresList = data.genres().isEmpty() ? "genre inconnu" : String.join(", ", data.genres());
+                    String albumInfo = data.albumName() != null ? data.albumName() : "Album inconnu";
+                    String durationText = String.format("(%d:%02d)", data.durationMs() / 60000, (data.durationMs() % 60000) / 1000);
+                    return String.format("'%s' par %s [Album: %s] [Genre: %s] [Durée: %s] (%d fois)",
+                        data.trackName(),
+                        String.join(", ", data.artistNames()),
+                        albumInfo,
+                        genresList,
+                        durationText,
+                        data.playCount());
+                })
                 .collect(Collectors.joining(", "));
 
-        return "En " + month.getMonth().getDisplayName(TextStyle.FULL, Locale.FRENCH) + " " + month.getYear() +
-                ", l’utilisateur a surtout écouté les artistes suivants : " + topArtists + ". " +
-                "Les morceaux les plus joués ont été : " + topTracks + ".";
+        // Analyser les genres dominants
+        Map<String, Long> genreCount = trackPlayData.values().stream()
+                .flatMap(data -> data.genres().stream())
+                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+
+        String topGenres = genreCount.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(5)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.joining(", "));
+
+        String genreText = topGenres.isEmpty() ? "" :
+                String.format(" Les genres musicaux dominants ont été : %s.", topGenres);
+
+        return String.format("En %s %d, l'utilisateur a surtout écouté les artistes suivants : %s. " +
+                "Les morceaux les plus joués ont été : %s.%s",
+                month.getMonth().getDisplayName(TextStyle.FULL, Locale.FRENCH),
+                month.getYear(),
+                topArtists,
+                topTracks,
+                genreText);
     }
 
     private String summarizeByHour(Map<Integer, Long> hourCount) {
@@ -223,16 +407,51 @@ public class UserDocumentGenerationService {
     }
 
     private String summarizeTopTracksGlobal(List<ListeningHistory> history) {
-        String topTracks = history.stream()
-                .map(h -> h.getTrack().getName())
-                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()))
-                .entrySet().stream()
-                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+        // Analyser les tracks avec leurs détails complets
+        Map<String, TrackPlayData> trackPlayData = history.stream()
+                .collect(Collectors.groupingBy(
+                    h -> h.getTrack().getId(),
+                    Collectors.collectingAndThen(
+                        Collectors.toList(),
+                        historyList -> {
+                            ListeningHistory first = historyList.get(0);
+                            List<String> artistNames = first.getTrack().getArtists().stream()
+                                    .map(Artist::getName)
+                                    .sorted()
+                                    .toList();
+                            Set<String> genres = first.getTrack().getGenres() != null ?
+                                    first.getTrack().getGenres() : Set.of();
+                            return new TrackPlayData(
+                                    first.getTrack().getName(),
+                                    artistNames,
+                                    historyList.size(),
+                                    genres,
+                                    first.getTrack().getAlbum().getName(),
+                                    first.getTrack().getDurationMs()
+                            );
+                        }
+                    )
+                ));
+
+        // Top tracks avec détails complets (titre, artiste, album, genre, durée)
+        String topTracks = trackPlayData.values().stream()
+                .sorted((a, b) -> Integer.compare(b.playCount(), a.playCount()))
                 .limit(10)
-                .map(e -> e.getKey() + " (" + e.getValue() + " fois)")
+                .map(data -> {
+                    String genresList = data.genres().isEmpty() ? "genre inconnu" : String.join(", ", data.genres());
+                    String albumInfo = data.albumName() != null ? data.albumName() : "Album inconnu";
+                    String durationText = String.format("(%d:%02d)", data.durationMs() / 60000, (data.durationMs() % 60000) / 1000);
+                    return String.format("'%s' par %s [Album: %s] [Genre: %s] [Durée: %s] (%d fois)",
+                        data.trackName(),
+                        String.join(", ", data.artistNames()),
+                        albumInfo,
+                        genresList,
+                        durationText,
+                        data.playCount());
+                })
                 .collect(Collectors.joining(", "));
 
-        return "L’utilisateur a écouté en boucle les titres suivants au cours des derniers mois : " + topTracks + ".";
+        return "L'utilisateur a écouté en boucle les titres suivants au cours des derniers mois : " + topTracks + ".";
     }
 
     private boolean documentExists(UUID userId, String summaryType, String content) {
@@ -264,7 +483,9 @@ public class UserDocumentGenerationService {
                                     first.getTrack().getName(),
                                     artistNames,
                                     historyList.size(),
-                                    genres
+                                    genres,
+                                    first.getTrack().getAlbum().getName(),
+                                    first.getTrack().getDurationMs()
                             );
                         }
                     )
@@ -335,7 +556,9 @@ public class UserDocumentGenerationService {
                                     first.getTrack().getName(),
                                     artistNames,
                                     historyList.size(),
-                                    genres
+                                    genres,
+                                    first.getTrack().getAlbum().getName(),
+                                    first.getTrack().getDurationMs()
                             );
                         }
                     )
@@ -379,7 +602,7 @@ public class UserDocumentGenerationService {
                 .map(Map.Entry::getKey)
                 .toList();
 
-        // Top tracks avec détails enrichis (incluant genres)
+        // Top tracks avec détails enrichis (incluant genres, album et durée)
         List<Map<String, Object>> topTracksDetailed = history.stream()
                 .collect(Collectors.groupingBy(
                     h -> h.getTrack().getId(),
@@ -393,7 +616,10 @@ public class UserDocumentGenerationService {
                                         .map(Artist::getName).toList(),
                                 "playCount", historyList.size(),
                                 "genres", first.getTrack().getGenres() != null ?
-                                        first.getTrack().getGenres() : Set.of()
+                                        first.getTrack().getGenres() : Set.of(),
+                                "albumName", first.getTrack().getAlbum().getName() != null ?
+                                        first.getTrack().getAlbum().getName() : "Album inconnu",
+                                "durationMs", first.getTrack().getDurationMs()
                             );
                         }
                     )
@@ -444,7 +670,10 @@ public class UserDocumentGenerationService {
                                         .map(Artist::getName).toList(),
                                 "playCount", historyList.size(),
                                 "genres", first.getTrack().getGenres() != null ?
-                                        first.getTrack().getGenres() : Set.of()
+                                        first.getTrack().getGenres() : Set.of(),
+                                "albumName", first.getTrack().getAlbum().getName() != null ?
+                                        first.getTrack().getAlbum().getName() : "Album inconnu",
+                                "durationMs", first.getTrack().getDurationMs()
                             );
                         }
                     )
@@ -479,6 +708,187 @@ public class UserDocumentGenerationService {
         );
     }
 
-    // Record mis à jour pour inclure les genres
-    private record TrackPlayData(String trackName, List<String> artistNames, int playCount, Set<String> genres) {}
+    /**
+     * Génère un résumé des dernières 24 heures
+     */
+    private String generateLast24HoursSummary(List<ListeningHistory> last24Hours) {
+        if (last24Hours.isEmpty()) return "Aucune écoute dans les dernières 24 heures.";
+
+        // Analyser les données des dernières 24h
+        Map<String, TrackPlayData> trackPlayData = last24Hours.stream()
+                .collect(Collectors.groupingBy(
+                    h -> h.getTrack().getId(),
+                    Collectors.collectingAndThen(
+                        Collectors.toList(),
+                        historyList -> {
+                            ListeningHistory first = historyList.get(0);
+                            List<String> artistNames = first.getTrack().getArtists().stream()
+                                    .map(Artist::getName)
+                                    .sorted()
+                                    .toList();
+                            Set<String> genres = first.getTrack().getGenres() != null ?
+                                    first.getTrack().getGenres() : Set.of();
+                            return new TrackPlayData(
+                                    first.getTrack().getName(),
+                                    artistNames,
+                                    historyList.size(),
+                                    genres,
+                                    first.getTrack().getAlbum().getName(),
+                                    first.getTrack().getDurationMs()
+                            );
+                        }
+                    )
+                ));
+
+        // Top tracks des dernières 24h
+        String topTracks = trackPlayData.values().stream()
+                .sorted((a, b) -> Integer.compare(b.playCount(), a.playCount()))
+                .limit(10)
+                .map(data -> String.format("%s par %s (%d fois)",
+                    data.trackName(),
+                    String.join(", ", data.artistNames()),
+                    data.playCount()))
+                .collect(Collectors.joining(", "));
+
+        // Top artistes des dernières 24h
+        Map<String, Long> artistCount = last24Hours.stream()
+                .flatMap(h -> h.getTrack().getArtists().stream())
+                .collect(Collectors.groupingBy(Artist::getName, Collectors.counting()));
+
+        String topArtists = artistCount.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(10)
+                .map(e -> e.getKey() + " (" + e.getValue() + " écoutes)")
+                .collect(Collectors.joining(", "));
+
+        // Analyser les heures d'écoute
+        Map<Integer, Long> hourlyListening = last24Hours.stream()
+                .collect(Collectors.groupingBy(
+                    h -> h.getPlayedAt().atZone(ZoneId.systemDefault()).getHour(),
+                    Collectors.counting()
+                ));
+
+        String peakHours = hourlyListening.entrySet().stream()
+                .sorted(Map.Entry.<Integer, Long>comparingByValue().reversed())
+                .limit(3)
+                .map(e -> String.format("%dh (%d écoutes)", e.getKey(), e.getValue()))
+                .collect(Collectors.joining(", "));
+
+        return String.format("RAPPORT DES DERNIÈRES 24 HEURES :\n\n" +
+                "Total d'écoutes : %d\n" +
+                "Morceaux uniques : %d\n\n" +
+                "TOP MORCEAUX ÉCOUTÉS :\n%s\n\n" +
+                "TOP ARTISTES :\n%s\n\n" +
+                "HEURES DE POINTE :\n%s",
+                last24Hours.size(),
+                trackPlayData.size(),
+                topTracks,
+                topArtists,
+                peakHours);
+    }
+
+    /**
+     * Génère un résumé des 7 derniers jours
+     */
+    private String generateLast7DaysSummary(List<ListeningHistory> lastWeek) {
+        if (lastWeek.isEmpty()) return "Aucune écoute dans les 7 derniers jours.";
+
+        // Analyser les données de la semaine
+        Map<String, TrackPlayData> trackPlayData = lastWeek.stream()
+                .collect(Collectors.groupingBy(
+                    h -> h.getTrack().getId(),
+                    Collectors.collectingAndThen(
+                        Collectors.toList(),
+                        historyList -> {
+                            ListeningHistory first = historyList.get(0);
+                            List<String> artistNames = first.getTrack().getArtists().stream()
+                                    .map(Artist::getName)
+                                    .sorted()
+                                    .toList();
+                            Set<String> genres = first.getTrack().getGenres() != null ?
+                                    first.getTrack().getGenres() : Set.of();
+                            return new TrackPlayData(
+                                    first.getTrack().getName(),
+                                    artistNames,
+                                    historyList.size(),
+                                    genres,
+                                    first.getTrack().getAlbum().getName(),
+                                    first.getTrack().getDurationMs()
+                            );
+                        }
+                    )
+                ));
+
+        // Top tracks de la semaine
+        String topTracks = trackPlayData.values().stream()
+                .sorted((a, b) -> Integer.compare(b.playCount(), a.playCount()))
+                .limit(15)
+                .map(data -> String.format("%s par %s (%d fois)",
+                    data.trackName(),
+                    String.join(", ", data.artistNames()),
+                    data.playCount()))
+                .collect(Collectors.joining(", "));
+
+        // Top artistes de la semaine
+        Map<String, Long> artistCount = lastWeek.stream()
+                .flatMap(h -> h.getTrack().getArtists().stream())
+                .collect(Collectors.groupingBy(Artist::getName, Collectors.counting()));
+
+        String topArtists = artistCount.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(15)
+                .map(e -> e.getKey() + " (" + e.getValue() + " écoutes)")
+                .collect(Collectors.joining(", "));
+
+        // Analyser les genres de la semaine
+        Map<String, Long> genreCount = trackPlayData.values().stream()
+                .flatMap(data -> data.genres().stream())
+                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+
+        String topGenres = genreCount.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(8)
+                .map(entry -> String.format("%s (%d tracks)", entry.getKey(), entry.getValue()))
+                .collect(Collectors.joining(", "));
+
+        // Analyser les patterns quotidiens
+        Map<String, Long> dailyListening = lastWeek.stream()
+                .collect(Collectors.groupingBy(
+                    h -> h.getPlayedAt().atZone(ZoneId.systemDefault()).toLocalDate().getDayOfWeek().getDisplayName(TextStyle.FULL, Locale.FRENCH),
+                    Collectors.counting()
+                ));
+
+        String dailyPattern = dailyListening.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(3)
+                .map(e -> String.format("%s (%d écoutes)", e.getKey(), e.getValue()))
+                .collect(Collectors.joining(", "));
+
+        String genreText = topGenres.isEmpty() ? "" :
+                String.format("\n\nTOP GENRES :\n%s", topGenres);
+
+        return String.format("RAPPORT DES 7 DERNIERS JOURS :\n\n" +
+                "Total d'écoutes : %d\n" +
+                "Morceaux uniques : %d\n" +
+                "Artistes différents : %d\n\n" +
+                "TOP MORCEAUX DE LA SEMAINE :\n%s\n\n" +
+                "TOP ARTISTES :\n%s%s\n\n" +
+                "JOURS LES PLUS ACTIFS :\n%s",
+                lastWeek.size(),
+                trackPlayData.size(),
+                artistCount.size(),
+                topTracks,
+                topArtists,
+                genreText,
+                dailyPattern);
+    }
+    // Record mis à jour pour inclure toutes les informations obligatoires du morceau
+    private record TrackPlayData(
+            String trackName,
+            List<String> artistNames,
+            int playCount,
+            Set<String> genres,
+            String albumName,
+            int durationMs  // Changé de Integer à int pour correspondre au modèle Track
+    ) {}
 }

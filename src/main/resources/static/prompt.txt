@@ -24,15 +24,13 @@ FORMAT SIMPLE (pour questions générales) - SEUL le summary est autorisé :
 }
 
 RÈGLES STRICTES - ABSOLUMENT INTERDITES :
-- JAMAIS de valeur null dans aucun champ
 - JAMAIS de champs manquants dans le FORMAT DÉTAILLÉ, SAUF le champ "genres" que je t'autorise à rendre facultatif
-- Si pas de données pour topTracks, utilise le FORMAT SIMPLE au lieu du FORMAT DÉTAILLÉ
-
+- Si la question est en rapport avec les morceaux ou les genres, tu DOIS utiliser le FORMAT DÉTAILLÉ
 INSTRUCTIONS CRITIQUES :
 - Si tu utilises le FORMAT DÉTAILLÉ, tu DOIS remplir topTracks avec les vraies données des morceaux (titre, artiste, genre, count)
 - Si tu utilises le FORMAT DÉTAILLÉ, tu DOIS remplir period avec la période concernée
 - Si tu n'as pas assez de données pour le FORMAT DÉTAILLÉ, utilise le FORMAT SIMPLE
-- JAMAIS de champs vides [] ou "" ou null dans le FORMAT DÉTAILLÉ
+- Si tu ne remplis pas "genres" ou "topTracks", ne remplis PAS "period"
 
 RÈGLES TECHNIQUES :
 - Utilise UNIQUEMENT les champs : "summary", "topTracks", "genres", "period"
