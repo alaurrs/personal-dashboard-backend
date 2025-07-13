@@ -32,7 +32,7 @@ public class SpotifySyncScheduler {
      * - `initialDelay = 60000` : Attend 1 minute après le démarrage de l'application avant la première exécution.
      *   Cela permet à l'application de se stabiliser complètement.
      */
-    @Scheduled(initialDelay = 60000, fixedRate = 1800000)
+    @Scheduled(initialDelay = 60000, fixedRate = 300000)
     public void syncAllUsersListeningHistory() {
         log.info("▶️ [SCHEDULER] Démarrage de la tâche de synchronisation de l'historique Spotify pour tous les utilisateurs...");
 
