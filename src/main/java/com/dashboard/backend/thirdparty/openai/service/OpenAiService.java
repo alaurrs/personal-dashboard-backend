@@ -136,9 +136,6 @@ public class OpenAiService {
 
         // Si topTracks est présent, vérifier qu'il n'est pas null et que les autres champs requis sont aussi présents
         if (response.topTracks() != null) {
-            if (response.genres() == null) {
-                throw new RuntimeException("Réponse IA invalide : topTracks présent mais genres est null");
-            }
             if (response.period() == null) {
                 throw new RuntimeException("Réponse IA invalide : topTracks présent mais period est null");
             }
@@ -154,7 +151,7 @@ public class OpenAiService {
         }
 
         // Vérifier que si period est présent, topTracks et genres le sont aussi
-        if (response.period() != null && (response.topTracks() == null || response.genres() == null)) {
+        if (response.period() != null && (response.topTracks() == null)) {
             throw new RuntimeException("Réponse IA invalide : period présent mais topTracks ou genres manquant");
         }
 
