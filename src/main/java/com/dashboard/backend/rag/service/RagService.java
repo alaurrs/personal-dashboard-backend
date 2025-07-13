@@ -37,34 +37,34 @@ public class RagService {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.dbSchema = """
-            CREATE TABLE public.listening_history (
-                user_id uuid NOT NULL,
-                track_id character varying NOT NULL,
-                played_at timestamp with time zone NOT NULL
-            );
-            CREATE TABLE public.tracks (
-                id character varying NOT NULL PRIMARY KEY,
-                name text NOT NULL,
-                album_id character varying,
-                duration_ms integer NOT NULL
-            );
-            CREATE TABLE public.albums (
-                id character varying NOT NULL PRIMARY KEY,
-                name text NOT NULL
-            );
-            CREATE TABLE public.artists (
-                id character varying NOT NULL PRIMARY KEY,
-                name text NOT NULL
-            );
-            CREATE TABLE public.track_artists (
-                track_id character varying NOT NULL,
-                artist_id character varying NOT NULL
-            );
-            CREATE TABLE public.track_genres (
-                track_id character varying NOT NULL,
-                genre character varying NOT NULL
-            );
-            """;
+                CREATE TABLE public.listening_history (
+                    user_id uuid NOT NULL,
+                    track_id character varying NOT NULL,
+                    played_at timestamp with time zone NOT NULL
+                );
+                CREATE TABLE public.tracks (
+                    id character varying NOT NULL PRIMARY KEY,
+                    name text NOT NULL,
+                    album_id character varying,
+                    duration_ms integer NOT NULL
+                );
+                CREATE TABLE public.albums (
+                    id character varying NOT NULL PRIMARY KEY,
+                    name text NOT NULL
+                );
+                CREATE TABLE public.artists (
+                    id character varying NOT NULL PRIMARY KEY,
+                    name text NOT NULL
+                );
+                CREATE TABLE public.track_artists (
+                    track_id character varying NOT NULL,
+                    artist_id character varying NOT NULL
+                );
+                CREATE TABLE public.track_genres (
+                    track_id character varying NOT NULL,
+                    genre character varying NOT NULL
+                );
+                """;
     }
 
 
@@ -74,26 +74,30 @@ public class RagService {
         // === ÉTAPE 1 : L'IA GÉNÈRE LE SQL (AVEC UN PROMPT AMÉLIORÉ) ===
 
         String sqlPrompt = """
-            Tu es un expert en SQL PostgreSQL. Ta seule mission est de générer UNE requête SQL pour répondre à la question de l'utilisateur.
-
-            **CHECKLIST IMPÉRATIVE POUR TA REQUÊTE :**
-            - [ ] La requête doit joindre `listening_history` avec `tracks`.
-            - [ ] La requête doit joindre `tracks` avec `track_artists` ET `artists` pour obtenir les noms des artistes.
-            - [ ] La requête doit joindre `tracks` avec `track_genres` pour obtenir les genres.
-            - [ ] La requête doit joindre `tracks` avec `albums` pour obtenir le nom de l'album.
-            - [ ] La requête doit TOUJOURS sélectionner : t.name (track_name), a.name (artist_name), al.name (album_name), et les genres agrégés avec STRING_AGG(DISTINCT tg.genre, ', ') AS genres.
-            - [ ] La requête doit compter les écoutes avec COUNT(*) AS listen_count.
-            - [ ] Le `GROUP BY` doit inclure toutes les colonnes non agrégées pour être valide (t.id, t.name, al.name, a.name).
-            - [ ] La requête doit filtrer pour l'utilisateur avec l'ID : {userId}.
-            
-            Ta sortie doit être UNIQUEMENT du code SQL brut.
-
-            Schéma de référence:
-            ---
-            {dbSchema}
-            ---
-            Question de l'utilisateur : {question}
-            """;
+                Tu es un expert en SQL PostgreSQL. Ta seule mission est de générer UNE requête SQL pour répondre à la question de l'utilisateur.
+                
+                **CHECKLIST IMPÉRATIVE POUR TA REQUÊTE :**
+                - [ ] La requête doit joindre `listening_history` avec `tracks`.
+                - [ ] La requête doit joindre `tracks` avec `track_artists` ET `artists` pour obtenir les noms des artistes.
+                - [ ] La requête doit joindre `tracks` avec `track_genres` pour obtenir les genres.
+                - [ ] La requête doit joindre `tracks` avec `albums` pour obtenir le nom de l'album.
+                - [ ] La requête doit TOUJOURS sélectionner les colonnes les plus détaillées possibles.
+                - [ ] La requête doit compter les écoutes avec COUNT(*) AS listen_count.
+                - [ ] Le `GROUP BY` doit être valide et inclure les colonnes non agrégées.
+                - [ ] La requête doit filtrer pour l'utilisateur avec l'ID : {userId}.
+                
+                -- ✅ NOUVELLE RÈGLE DE FILTRAGE DYNAMIQUE --
+                - [ ] **Analyse la question de l'utilisateur. Si elle contient un nom de genre (comme 'Pop', 'Rock', 'Jazz'), un nom d'artiste, ou une période de temps, ajoute une clause `WHERE` supplémentaire pour filtrer les résultats. 
+                Par exemple, pour "chansons Pop", ajoute : `AND tg.genre ILIKE '%Pop%'`**
+                
+                Ta sortie doit être UNIQUEMENT du code SQL brut.
+                
+                Schéma de référence:
+                ---
+                {dbSchema}
+                ---
+                Question de l'utilisateur : {question}
+                """;
 
         String sqlQuery = chatClient.prompt()
                 .user(userSpec -> userSpec
